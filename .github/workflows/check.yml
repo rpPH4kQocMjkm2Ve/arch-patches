@@ -17,50 +17,52 @@ jobs:
       - name: Setup
         run: pacman -Sy --noconfirm git >/dev/null 2>&1
 
-      - name: Clone and extract upstream
+      - name: Clone upstream PKGBUILD repo
         run: |
           git clone --depth 1 \
             https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git \
-            .upstream
-          cd .upstream
-          # --nobuild exits non-zero by design (build not attempted);
-          # capture its exit and only fail on signal/unexpected errors
-          rc=0
-          makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -20 || rc=$?
-          if (( rc > 1 )); then
-            echo "::error::makepkg exited with unexpected code $rc"
-            exit 1
-          fi
+            /tmp/upstream
+
+      - name: Extract source via makepkg
+        run: |
+          cd /tmp/upstream
+          useradd -m builder 2>/dev/null || true
+          chown -R builder: /tmp/upstream
+          # --nobuild exits non-zero by design (build not attempted)
+          su builder -c 'makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -30' \
+            || true
+          echo ":: Contents of /tmp/upstream/src/:"
+          ls /tmp/upstream/src/ || echo "WARNING: src/ not created"
 
       - name: Verify source extraction
         run: |
-          HEADER=$(find .upstream/src/ -path '*/shared/user-record.h' | head -1)
+          HEADER=$(find /tmp/upstream/src/ -path '*/shared/user-record.h' 2>/dev/null | head -1)
           if [[ -z "$HEADER" ]]; then
             echo "::error::user-record.h not found — source extraction may have failed"
-            ls -R .upstream/src/ | head -40 || true
+            find /tmp/upstream/ -maxdepth 3 -type d 2>/dev/null || true
             exit 1
           fi
           echo ":: Found header: $HEADER"
 
       - name: Check if age-verification code still exists
         run: |
-          HEADER=$(find .upstream/src/ -path '*/shared/user-record.h' | head -1)
+          HEADER=$(find /tmp/upstream/src/ -path '*/shared/user-record.h' | head -1)
           if grep -q 'birth_date' "$HEADER"; then
             echo ":: Age-verification code present — patch still needed"
           else
             echo "::notice::Age-verification code gone — patch may be obsolete"
           fi
 
-      - name: Verify patch applies cleanly
+      - name: Verify patches apply cleanly
         run: |
-          SRC_DIR=$(ls -d .upstream/src/systemd*/ 2>/dev/null | head -1)
+          SRC_DIR=$(ls -d /tmp/upstream/src/systemd-*/ 2>/dev/null | head -1)
           if [[ -z "$SRC_DIR" ]]; then
             echo "::error::systemd source directory not found"
-            ls -la .upstream/src/ || true
+            ls -la /tmp/upstream/src/ || true
             exit 1
           fi
           cd "$SRC_DIR"
-          for p in "$GITHUB_WORKSPACE"/patches/*.patch; do
+          for p in "$GITHUB_WORKSPACE"/packages/systemd/patches/*.patch; do
             echo ":: Testing $(basename "$p")"
             patch -Np1 --dry-run < "$p"
           done
