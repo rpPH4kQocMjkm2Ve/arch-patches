@@ -1,16 +1,34 @@
-# systemd-no-age
+# arch-patches
 
-Arch Linux systemd packages with age-verification infrastructure (`birthDate`,
-`--birth-date`) removed.
+Arch Linux packages rebuilt with age-verification and surveillance
+infrastructure removed.
 
-This removes the user birth date field introduced in systemd 261 from
-`homectl`, `user-record`, documentation and tests. Nothing else is changed.
+## Packages
 
-## Why
+### systemd
 
-systemd added a `birthDate` field to user records and a `--birth-date` flag to
-`homectl`. This is unnecessary PII collection at the init system level. This
-project maintains a patch that reverts it.
+Removes the user birth date field introduced in systemd 261:
+
+- `birthDate` field from user records (JSON, struct, serialization)
+- `--birth-date` flag from `homectl`
+- `parse_birth_date()` / `parse_calendar_date_full()` — reverted to
+  `parse_calendar_date()`
+- Birth date display in `user-record-show.c`
+- PII sensitivity marking for `realName`, `location`, `emailAddress`
+  (reverted to only marking `secret`)
+- Related tests and documentation
+
+Patch based on [r4shsec/systemd-no-age-verification](https://github.com/r4shsec/systemd-no-age-verification).
+
+See [`packages/systemd/patches/0001-revert-age-verification.patch`](packages/systemd/patches/0001-revert-age-verification.patch)
+for the full diff.
+
+### xdg-desktop-portal (monitoring)
+
+A [draft PR](https://github.com/flatpak/xdg-desktop-portal/pull/1922)
+proposes a `ParentalControls` portal with a `QueryAgeBracket` D-Bus method
+that lets sandboxed apps query the user's age range. This has not been merged
+yet. When it is, a patch will be added here.
 
 ## Install
 
@@ -38,9 +56,15 @@ SigLevel = Optional TrustAll
 Server = file:///var/cache/pacman/custom
 ```
 
+### Building a single package
+
+```bash
+make systemd
+```
+
 ### Updating
 
-When upstream releases a new systemd version:
+When upstream releases a new version:
 
 ```bash
 make clean
@@ -49,10 +73,12 @@ make deploy
 sudo pacman -Syu
 ```
 
-If the patch fails to apply, CI will have already flagged it via the daily
+If a patch fails to apply, CI will have already flagged it via the daily
 check workflow.
 
 ## What gets built
+
+### systemd
 
 The standard Arch `systemd` split packages with the patch applied:
 
@@ -65,53 +91,60 @@ The standard Arch `systemd` split packages with the patch applied:
 - `systemd-ukify`
 
 Version is the same as upstream with `.1` appended to `pkgrel`
-(e.g. `260-1.1`).
-
-## What the patch removes
-
-- `birthDate` field from user records (JSON, struct, serialization)
-- `--birth-date` flag from `homectl`
-- `parse_birth_date()` / `parse_calendar_date_full()` — reverted to
-  `parse_calendar_date()`
-- Birth date display in `user-record-show.c`
-- PII sensitivity marking for `realName`, `location`, `emailAddress`
-  (reverted to only marking `secret`)
-- Related tests and documentation
-
-See [`patches/0001-revert-age-verification.patch`](patches/0001-revert-age-verification.patch)
-for the full diff.
+(e.g. `261-1` → `261-1.1`).
 
 ## Testing
 
 ```bash
-make test-quick             # check binaries for birthDate strings (no root)
+make test-quick             # check binaries for remnants (no root)
 sudo make test-smoke        # install in nspawn container and boot
 ```
 
+## AUR
+
+```bash
+make sync-aur               # generate AUR files for all packages
+bash scripts/sync-aur.sh systemd   # single package
+```
+
+Generated files go to `packages/<name>/aur/`.
+
 ## CI
 
-A daily GitHub Actions workflow ([`.github/workflows/check.yml`](.github/workflows/check.yml))
-verifies the patch still applies to the latest upstream PKGBUILD. If systemd
-does not contain the age-verification code upstream, CI will report the patch as
-obsolete.
+A daily GitHub Actions workflow
+([`.github/workflows/check.yml`](.github/workflows/check.yml)) verifies
+patches still apply to the latest upstream. If upstream removes the
+age-verification code, CI will report the patch as obsolete.
+
+CI also monitors `xdg-desktop-portal` for the `ParentalControls` portal
+merge.
 
 ## Project structure
 
 ```
 .
-├── patches/                 # git-format patch(es) against systemd source
-│   └── 0001-revert-age-verification.patch
-├── pkgbuild.append          # appended to upstream PKGBUILD (adds patch + bumps pkgrel)
+├── Makefile                              # top-level orchestrator
+├── packages/
+│   ├── systemd/
+│   │   ├── patches/                      # git-format patches
+│   │   │   └── 0001-revert-age-verification.patch
+│   │   ├── pkgbuild.append              # appended to upstream PKGBUILD
+│   │   ├── aur/                         # generated AUR package files
+│   │   └── test/
+│   │       ├── quick-check.sh           # strings-based binary check
+│   │       └── smoke.sh                 # nspawn install + boot test
+│   └── xdg-desktop-portal/             # prepared, not yet active
+│       ├── patches/
+│       ├── pkgbuild.append
+│       └── test/
 ├── deploy/
-│   └── push.sh              # copy built packages to local pacman repo
-├── test/
-│   ├── quick-check.sh       # strings-based binary check
-│   └── smoke.sh             # nspawn install + boot test
-├── Makefile                 # build/test/deploy workflow
+│   └── push.sh                          # copy packages to local pacman repo
+├── scripts/
+│   └── sync-aur.sh                      # generate AUR files per package
 └── .github/workflows/
-    └── check.yml            # daily patch applicability check
+    └── check.yml                        # daily patch + upstream checks
 ```
 
 ## License
 
-LGPL-2.1-or-later — same as systemd.
+LGPL-2.1-or-later — same as systemd and xdg-desktop-portal.
