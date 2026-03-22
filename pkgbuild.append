@@ -2,6 +2,10 @@
 pkgbase=systemd-no-age
 pkgdesc='systemd — patched to remove age-verification infrastructure (birthDate, parse_birth_date)'
 
+# Upstream source entry is "systemd::git+…", so the clone directory
+# is always called "systemd" regardless of our pkgbase override.
+_upstream_srcname=systemd
+
 source+=('0001-revert-age-verification.patch')
 sha512sums+=('SKIP')
 options+=(!lto)
@@ -10,13 +14,7 @@ options+=(!lto)
 eval "$(declare -f prepare | sed '1s/prepare/_orig_prepare/')"
 prepare() {
     _orig_prepare
-    cd "${srcdir}/${pkgbase}"
-
-    # Verify we landed in the actual systemd source tree
-    if [[ ! -f src/shared/user-record.h ]]; then
-        error "user-record.h not found — source directory layout may have changed (pkgbase=%s)" "$pkgbase"
-        return 1
-    fi
+    cd "${srcdir}/${_upstream_srcname}"
 
     if grep -q 'birth_date' src/shared/user-record.h; then
         msg2 "Reverting age-verification infrastructure..."
