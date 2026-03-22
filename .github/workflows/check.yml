@@ -55,7 +55,7 @@ jobs:
 
       - name: Verify patches apply cleanly
         run: |
-          SRC_DIR=$(ls -d /tmp/upstream/src/systemd-*/ 2>/dev/null | head -1)
+          SRC_DIR=$(ls -d /tmp/upstream/src/systemd*/ 2>/dev/null | head -1)
           if [[ -z "$SRC_DIR" ]]; then
             echo "::error::systemd source directory not found"
             ls -la /tmp/upstream/src/ || true
