@@ -1,0 +1,54 @@
+name: Check patch applies
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:base-devel
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup
+        run: pacman -Sy --noconfirm git >/dev/null 2>&1
+
+      - name: Clone and extract upstream
+        run: |
+          git clone --depth 1 \
+            https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git \
+            .upstream
+          cd .upstream
+          makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -10 || true
+
+      - name: Check if age-verification code still exists
+        run: |
+          HEADER=$(find .upstream/src/ -path '*/shared/user-record.h' | head -1)
+          if [[ -z "$HEADER" ]]; then
+            echo "::warning::user-record.h not found in extracted source"
+            exit 0
+          fi
+          if grep -q 'birth_date' "$HEADER"; then
+            echo ":: Age-verification code present — patch still needed"
+          else
+            echo "::notice::Age-verification code gone — patch may be obsolete"
+          fi
+
+      - name: Verify patch applies cleanly
+        run: |
+          SRC_DIR=$(ls -d .upstream/src/systemd*/ 2>/dev/null | head -1)
+          if [[ -z "$SRC_DIR" ]]; then
+            echo "::error::systemd source directory not found"
+            ls -la .upstream/src/ || true
+            exit 1
+          fi
+          cd "$SRC_DIR"
+          for p in "$GITHUB_WORKSPACE"/patches/*.patch; do
+            echo ":: Testing $(basename "$p")"
+            patch -Np1 --dry-run < "$p"
+          done
+          echo ":: All patches apply cleanly"

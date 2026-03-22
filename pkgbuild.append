@@ -1,0 +1,22 @@
+# -- systemd-no-age: systemd without age-verification --
+pkgbase=systemd-no-age
+pkgdesc='systemd — patched to remove age-verification infrastructure (birthDate, parse_birth_date)'
+
+source+=('0001-revert-age-verification.patch')
+sha512sums+=('SKIP')
+options+=(!lto)
+
+# Wrap the original prepare() so our patch applies after upstream's
+eval "$(declare -f prepare | sed '1s/prepare/_orig_prepare/')"
+prepare() {
+    _orig_prepare
+    cd "${srcdir}/${pkgbase}"
+    if grep -q 'birth_date' src/shared/user-record.h 2>/dev/null; then
+        msg2 "Reverting age-verification infrastructure..."
+        patch -Np1 -i "${srcdir}/0001-revert-age-verification.patch"
+    else
+        msg2 "No age-verification code found, skipping patch"
+    fi
+}
+
+pkgrel="${pkgrel}.1"
