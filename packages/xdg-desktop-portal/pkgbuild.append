@@ -1,0 +1,22 @@
+# -- no-parental-controls: xdg-desktop-portal without age bracket portal --
+pkgbase=xdg-desktop-portal-no-age
+
+_upstream_srcname=xdg-desktop-portal
+
+source+=('0001-remove-parental-controls.patch')
+sha512sums+=('SKIP')
+
+eval "$(declare -f prepare | sed '1s/prepare/_orig_prepare/')"
+prepare() {
+    _orig_prepare
+    cd "${srcdir}/${_upstream_srcname}"
+
+    if grep -q 'parental.controls' src/meson.build; then
+        msg2 "Removing ParentalControls portal..."
+        patch -Np1 -i "${srcdir}/0001-remove-parental-controls.patch"
+    else
+        msg2 "No ParentalControls code found, skipping patch"
+    fi
+}
+
+pkgrel="${pkgrel}.1"

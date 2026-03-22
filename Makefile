@@ -1,33 +1,39 @@
-PKGBASE   := systemd
-ARCH_PKG  := https://gitlab.archlinux.org/archlinux/packaging/packages/$(PKGBASE).git
-BUILDDIR  := .build
-CHROOT    := /var/lib/makechrootpkg
-REPODIR   ?= /var/cache/pacman/custom
-REPONAME  ?= custom
+PACKAGES    := systemd
+# PACKAGES  += xdg-desktop-portal
+CHROOT      := /var/lib/makechrootpkg
+REPODIR     ?= /var/cache/pacman/custom
+REPONAME    ?= custom
 
 .PHONY: all build test-quick test-smoke deploy \
-        setup-chroot nuke-chroot check-upstream sync-aur clean
+        setup-chroot nuke-chroot sync-aur clean $(PACKAGES)
 
-all: build
-	bash test/quick-check.sh $(BUILDDIR)
+all: $(PACKAGES)
 
-build: clean
-	git clone --depth 1 $(ARCH_PKG) $(BUILDDIR)
-	cp patches/*.patch $(BUILDDIR)/
-	cat pkgbuild.append >> $(BUILDDIR)/PKGBUILD
-	cd $(BUILDDIR) && makechrootpkg -c -r $(CHROOT) -- --skippgpcheck
+$(PACKAGES):
+	$(MAKE) -C packages/$@ build CHROOT=$(CHROOT)
+	$(MAKE) -C packages/$@ test-quick
+
+build: $(PACKAGES)
 
 test-quick:
-	bash test/quick-check.sh $(BUILDDIR)
+	@for pkg in $(PACKAGES); do \
+		$(MAKE) -C packages/$$pkg test-quick; \
+	done
 
 test-smoke:
-	sudo bash test/smoke.sh $(BUILDDIR)
+	@for pkg in $(PACKAGES); do \
+		sudo $(MAKE) -C packages/$$pkg test-smoke; \
+	done
 
 deploy:
-	bash deploy/push.sh $(BUILDDIR) $(REPODIR) $(REPONAME)
+	@for pkg in $(PACKAGES); do \
+		bash deploy/push.sh packages/$$pkg/.build $(REPODIR) $(REPONAME); \
+	done
 
 sync-aur:
-	bash scripts/sync-aur.sh
+	@for pkg in $(PACKAGES); do \
+		bash scripts/sync-aur.sh $$pkg; \
+	done
 
 setup-chroot:
 	@if [ -d "$(CHROOT)/root" ]; then \
@@ -42,11 +48,7 @@ nuke-chroot:
 	sudo rm -rf $(CHROOT)
 	$(MAKE) setup-chroot
 
-check-upstream:
-	@echo "==> Installed:"
-	@pacman -Q systemd systemd-libs 2>/dev/null || echo "  not installed"
-	@echo "==> Upstream:"
-	@pacman -Si systemd 2>/dev/null | grep -E '^(Version|Repository)'
-
 clean:
-	rm -rf $(BUILDDIR)
+	@for pkg in $(PACKAGES); do \
+		$(MAKE) -C packages/$$pkg clean; \
+	done

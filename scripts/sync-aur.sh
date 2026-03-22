@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
 # Generate AUR package files from upstream PKGBUILD + our patches
+#
+# Usage: sync-aur.sh <package-name>
+#   e.g. sync-aur.sh systemd
+#        sync-aur.sh xdg-desktop-portal
 set -euo pipefail
 
+PKGNAME="${1:?Usage: sync-aur.sh <package-name>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-AUR_DIR="$ROOT/aur"
+PKG_DIR="$ROOT/packages/$PKGNAME"
+
+if [[ ! -d "$PKG_DIR" ]]; then
+    echo "ERROR: package directory not found: $PKG_DIR" >&2
+    exit 1
+fi
+
+if [[ ! -f "$PKG_DIR/pkgbuild.append" ]]; then
+    echo "ERROR: no pkgbuild.append in $PKG_DIR" >&2
+    exit 1
+fi
+
+ARCH_PKG="https://gitlab.archlinux.org/archlinux/packaging/packages/${PKGNAME}.git"
+AUR_DIR="$PKG_DIR/aur"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-ARCH_PKG="https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git"
-
-echo ":: Fetching official PKGBUILD"
+echo ":: Fetching official PKGBUILD for $PKGNAME"
 git clone --depth 1 "$ARCH_PKG" "$TMP/upstream"
 
 echo ":: Generating AUR PKGBUILD"
@@ -25,15 +41,17 @@ sed -i '1,/^$/{
 }' "$AUR_DIR/PKGBUILD"
 
 # Append our modifications
-cat "$ROOT/pkgbuild.append" >> "$AUR_DIR/PKGBUILD"
+cat "$PKG_DIR/pkgbuild.append" >> "$AUR_DIR/PKGBUILD"
 
 # Copy patch files needed by the PKGBUILD
-cp "$ROOT/patches/"*.patch "$AUR_DIR/"
+if compgen -G "$PKG_DIR/patches/"*.patch > /dev/null; then
+    cp "$PKG_DIR/patches/"*.patch "$AUR_DIR/"
+fi
 
 # Generate .SRCINFO
 cd "$AUR_DIR"
 makepkg --printsrcinfo > .SRCINFO
 
 VER=$(grep -m1 'pkgver=' PKGBUILD | cut -d= -f2)
-echo ":: AUR package ready for systemd $VER"
-echo ":: Review, then: cd aur && git add -A && git commit && git push"
+echo ":: AUR package ready for $PKGNAME $VER"
+echo ":: Review, then: cd packages/$PKGNAME/aur && git add -A && git commit && git push"
