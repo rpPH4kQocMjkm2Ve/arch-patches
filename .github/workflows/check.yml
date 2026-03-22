@@ -31,8 +31,6 @@ jobs:
           # --nobuild exits non-zero by design (build not attempted)
           su builder -c 'makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -30' \
             || true
-          echo ":: Contents of /tmp/upstream/src/:"
-          ls /tmp/upstream/src/ || echo "WARNING: src/ not created"
 
       - name: Verify source extraction
         run: |
@@ -44,16 +42,20 @@ jobs:
           fi
           echo ":: Found header: $HEADER"
 
-      - name: Check if age-verification code still exists
+      - name: Check if age-verification code exists
+        id: age-check
         run: |
           HEADER=$(find /tmp/upstream/src/ -path '*/shared/user-record.h' | head -1)
           if grep -q 'birth_date' "$HEADER"; then
-            echo ":: Age-verification code present — patch still needed"
+            echo ":: Age-verification code present — patch needed"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Age-verification code gone — patch may be obsolete"
+            echo ":: Age-verification code not present — patch not needed yet"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify patches apply cleanly
+        if: steps.age-check.outputs.needed == 'true'
         run: |
           SRC_DIR=$(ls -d /tmp/upstream/src/systemd*/ 2>/dev/null | head -1)
           if [[ -z "$SRC_DIR" ]]; then
