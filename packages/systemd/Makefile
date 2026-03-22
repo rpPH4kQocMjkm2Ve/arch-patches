@@ -21,7 +21,7 @@ test-quick:
 	bash test/quick-check.sh $(BUILDDIR)
 
 test-smoke:
-	sudo bash test/smoke.sh $(BUILDDIR)
+	bash test/smoke.sh $(BUILDDIR)
 
 clean:
 	rm -rf $(BUILDDIR)

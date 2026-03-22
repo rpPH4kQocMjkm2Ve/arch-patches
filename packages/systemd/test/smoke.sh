@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test: install patched packages in an nspawn container and verify
-set -euo pipefail
+set -Eeuo pipefail
 
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: smoke test requires root" >&2

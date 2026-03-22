@@ -13,8 +13,10 @@ fi
 
 mkdir -p "$REPODIR"
 
-# Remove old systemd packages before copying new ones
-rm -f "$REPODIR"/systemd-*.pkg.tar.zst
+# Remove old packages before copying new ones
+PKGBASE=$(bsdtar -xf "${PKGS[0]}" -O .PKGINFO 2>/dev/null \
+         | grep -m1 '^pkgbase' | cut -d= -f2 | tr -d ' ')
+rm -f "$REPODIR"/${PKGBASE}-*.pkg.tar.zst
 
 # Copy built packages and track their destination paths
 DEST_PKGS=()
