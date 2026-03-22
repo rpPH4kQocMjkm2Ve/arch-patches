@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  check:
+  check-systemd:
     runs-on: ubuntu-latest
     container:
       image: archlinux/archlinux:base-devel
@@ -69,3 +69,64 @@ jobs:
             patch -Np1 --dry-run < "$p"
           done
           echo ":: All patches apply cleanly"
+
+  check-xdp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check PR #1922 status
+        id: pr-status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_JSON=$(gh api repos/flatpak/xdg-desktop-portal/pulls/1922)
+          STATE=$(echo "$PR_JSON" | jq -r '.state')
+          MERGED=$(echo "$PR_JSON" | jq -r '.merged')
+          TITLE=$(echo "$PR_JSON" | jq -r '.title')
+
+          echo ":: PR #1922: \"$TITLE\""
+          echo "::   state=$STATE  merged=$MERGED"
+
+          echo "state=$STATE"   >> "$GITHUB_OUTPUT"
+          echo "merged=$MERGED" >> "$GITHUB_OUTPUT"
+
+          if [[ "$MERGED" == "true" ]]; then
+            echo "::warning::PR #1922 has been MERGED"
+          fi
+
+      - name: Check if ParentalControls code is in main branch
+        id: main-check
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            'https://raw.githubusercontent.com/flatpak/xdg-desktop-portal/main/src/parental-controls.c')
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::parental-controls.c found in main — patch is now needed"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo ":: parental-controls.c not in main yet (HTTP $HTTP_CODE)"
+          fi
+
+      - name: Check Arch packaging for ParentalControls
+        run: |
+          git clone --depth 1 \
+            https://gitlab.archlinux.org/archlinux/packaging/packages/xdg-desktop-portal.git \
+            /tmp/xdp-pkg
+
+          if grep -rq 'parental.controls\|ParentalControls' /tmp/xdp-pkg/; then
+            echo "::warning::Arch xdg-desktop-portal package already references ParentalControls"
+          else
+            echo ":: Arch package does not reference ParentalControls yet"
+          fi
+
+      - name: Fail if patch needed but missing
+        if: steps.main-check.outputs.found == 'true'
+        run: |
+          if [ ! -s packages/xdg-desktop-portal/patches/0001-remove-parental-controls.patch ]; then
+            echo "::error::ParentalControls landed upstream but no patch exists in packages/xdg-desktop-portal/patches/"
+            exit 1
+          fi
+          echo ":: Patch file exists"

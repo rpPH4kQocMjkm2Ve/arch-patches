@@ -116,8 +116,10 @@ A daily GitHub Actions workflow
 patches still apply to the latest upstream. If upstream removes the
 age-verification code, CI will report the patch as obsolete.
 
-CI also monitors `xdg-desktop-portal` for the `ParentalControls` portal
-merge.
+CI also monitors the `xdg-desktop-portal`
+[ParentalControls PR](https://github.com/flatpak/xdg-desktop-portal/pull/1922)
+and checks whether the code has landed in the upstream `main` branch or Arch
+packaging. If it has, CI will fail until a removal patch is added.
 
 ## Project structure
 
