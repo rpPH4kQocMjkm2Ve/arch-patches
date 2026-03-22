@@ -70,15 +70,23 @@ EOF
 ln -sf ../smoke-poweroff.service \
     "$ROOT/etc/systemd/system/multi-user.target.wants/smoke-poweroff.service"
 
+# Run the boot test with a timeout
+# Exit codes:
+#   0   — clean shutdown (success)
+#   124 — timeout fired, container did not shut down (failure)
+#   143 — nspawn caught SIGTERM during shutdown (acceptable)
 timeout 30 systemd-nspawn -q --register=no -D "$ROOT" --boot 2>&1 &
 PID=$!
 wait "$PID" 2>/dev/null
 RC=$?
 
-if (( RC == 0 || RC == 143 )); then
-    echo "  OK: boot + clean shutdown"
+if (( RC == 124 )); then
+    echo "  FAIL: container did not shut down within 30 seconds"
+    exit 1
+elif (( RC == 0 || RC == 143 )); then
+    echo "  OK: boot + clean shutdown (exit code $RC)"
 else
-    echo "  FAIL: boot exit code $RC"
+    echo "  FAIL: boot test exit code $RC"
     exit 1
 fi
 

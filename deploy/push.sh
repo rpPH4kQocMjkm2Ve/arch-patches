@@ -12,9 +12,20 @@ if (( ${#PKGS[@]} == 0 )); then
 fi
 
 mkdir -p "$REPODIR"
+
+# Remove old systemd packages before copying new ones
 rm -f "$REPODIR"/systemd-*.pkg.tar.zst
-cp -v "${PKGS[@]}" "$REPODIR/"
-repo-add -R "$REPODIR/$REPONAME.db.tar.gz" "$REPODIR"/*.pkg.tar.zst
+
+# Copy built packages and track their destination paths
+DEST_PKGS=()
+for pkg in "${PKGS[@]}"; do
+    cp -v "$pkg" "$REPODIR/"
+    DEST_PKGS+=("$REPODIR/$(basename "$pkg")")
+done
+
+# Only add the packages we just copied — avoid re-indexing
+# unrelated packages that may live in the same repo directory
+repo-add -R "$REPODIR/$REPONAME.db.tar.gz" "${DEST_PKGS[@]}"
 
 echo "==> Repository updated: $REPODIR"
 echo "==> Run: sudo pacman -Syu"

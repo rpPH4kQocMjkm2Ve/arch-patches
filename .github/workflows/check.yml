@@ -23,15 +23,28 @@ jobs:
             https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git \
             .upstream
           cd .upstream
-          makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -10 || true
+          # --nobuild exits non-zero by design (build not attempted);
+          # capture its exit and only fail on signal/unexpected errors
+          rc=0
+          makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -20 || rc=$?
+          if (( rc > 1 )); then
+            echo "::error::makepkg exited with unexpected code $rc"
+            exit 1
+          fi
+
+      - name: Verify source extraction
+        run: |
+          HEADER=$(find .upstream/src/ -path '*/shared/user-record.h' | head -1)
+          if [[ -z "$HEADER" ]]; then
+            echo "::error::user-record.h not found — source extraction may have failed"
+            ls -R .upstream/src/ | head -40 || true
+            exit 1
+          fi
+          echo ":: Found header: $HEADER"
 
       - name: Check if age-verification code still exists
         run: |
           HEADER=$(find .upstream/src/ -path '*/shared/user-record.h' | head -1)
-          if [[ -z "$HEADER" ]]; then
-            echo "::warning::user-record.h not found in extracted source"
-            exit 0
-          fi
           if grep -q 'birth_date' "$HEADER"; then
             echo ":: Age-verification code present — patch still needed"
           else

@@ -5,7 +5,7 @@ index 5335e14..9d6d8c1 100644
 @@ -273,9 +273,6 @@ This must be a string, and should follow the semantics defined in the
  It's probably wise to use a location string processable by geo-location subsystems, but this is not enforced nor required.
  Example: `Berlin, Germany` or `Basement, Room 3a`.
- 
+
 -`birthDate` → A string in ISO 8601 calendar date format (`YYYY-MM-DD`) indicating the user's date
 -of birth. The earliest representable year is 1900. This field is optional.
 -
@@ -19,7 +19,7 @@ index bb827d1..a59efd7 100644
 @@ -366,16 +366,6 @@
          <xi:include href="version-info.xml" xpointer="v245"/></listitem>
        </varlistentry>
- 
+
 -      <varlistentry>
 -        <term><option>--birth-date=<optional><replaceable>DATE</replaceable></optional></option></term>
 -
@@ -32,7 +32,7 @@ index bb827d1..a59efd7 100644
 -
        <varlistentry>
          <term><option>--icon-name=<replaceable>ICON</replaceable></option></term>
- 
+
 diff --git a/src/basic/time-util.c b/src/basic/time-util.c
 index 1e426bb..4ba5bfa 100644
 --- a/src/basic/time-util.c
@@ -40,17 +40,17 @@ index 1e426bb..4ba5bfa 100644
 @@ -1893,8 +1893,9 @@ TimestampStyle timestamp_style_from_string(const char *s) {
          return t;
  }
- 
+
 -int parse_calendar_date_full(const char *s, bool allow_pre_epoch, usec_t *ret_usec, struct tm *ret_tm) {
 +int parse_calendar_date(const char *s, usec_t *ret) {
          struct tm parsed_tm = {}, copy_tm;
 +        usec_t usec;
          const char *k;
          int r;
- 
+
 @@ -1905,22 +1906,9 @@ int parse_calendar_date_full(const char *s, bool allow_pre_epoch, usec_t *ret_us
                  return -EINVAL;
- 
+
          copy_tm = parsed_tm;
 -
 -        usec_t usec = USEC_INFINITY;
@@ -71,13 +71,13 @@ index 1e426bb..4ba5bfa 100644
 +        r = mktime_or_timegm_usec(&copy_tm, /* utc= */ true, &usec);
 +        if (r < 0)
 +                return r;
- 
+
          /* Refuse non-normalized dates, e.g. Feb 30 */
          if (copy_tm.tm_mday != parsed_tm.tm_mday ||
 @@ -1928,15 +1916,8 @@ int parse_calendar_date_full(const char *s, bool allow_pre_epoch, usec_t *ret_us
              copy_tm.tm_year != parsed_tm.tm_year)
                  return -EINVAL;
- 
+
 -        if (ret_usec)
 -                *ret_usec = usec;
 -        if (ret_tm) {
@@ -89,7 +89,7 @@ index 1e426bb..4ba5bfa 100644
 -        }
 +        if (ret)
 +                *ret = usec;
- 
+
          return 0;
  }
 diff --git a/src/basic/time-util.h b/src/basic/time-util.h
@@ -99,13 +99,13 @@ index 5b6a524..c397188 100644
 @@ -1,7 +1,6 @@
  /* SPDX-License-Identifier: LGPL-2.1-or-later */
  #pragma once
- 
+
 -#include <limits.h>
  #include <time.h>
- 
+
  #include "basic-forward.h"
 @@ -181,23 +180,7 @@ const char* etc_localtime(void);
- 
+
  int mktime_or_timegm_usec(struct tm *tm, bool utc, usec_t *ret);
  int localtime_or_gmtime_usec(usec_t t, bool utc, struct tm *ret);
 -
@@ -126,7 +126,7 @@ index 5b6a524..c397188 100644
 -        return parse_calendar_date_full(s, /* allow_pre_epoch= */ true, NULL, ret);
 -}
 +int parse_calendar_date(const char *s, usec_t *ret);
- 
+
  uint32_t usec_to_jiffies(usec_t usec);
  usec_t jiffies_to_usec(uint32_t jiffies);
 diff --git a/src/home/homectl.c b/src/home/homectl.c
@@ -160,7 +160,7 @@ index 507860c..a8ebf85 100644
 @@ -4415,22 +4412,6 @@ static int parse_argv(int argc, char *argv[]) {
                          break;
                  }
- 
+
 -                case ARG_BIRTH_DATE:
 -                        if (isempty(optarg)) {
 -                                r = drop_from_identity("birthDate");
@@ -208,7 +208,7 @@ index 4dfb2c7..d5e572d 100644
 @@ -418,28 +417,6 @@ static int json_dispatch_filename_or_path(const char *name, sd_json_variant *var
          return 0;
  }
- 
+
 -static int json_dispatch_birth_date(const char *name, sd_json_variant *variant, sd_json_dispatch_flags_t flags, void *userdata) {
 -        struct tm *ret = ASSERT_PTR(userdata);
 -        const char *s;
@@ -237,7 +237,7 @@ index 4dfb2c7..d5e572d 100644
 @@ -1514,18 +1491,10 @@ int user_group_record_mangle(
          if (USER_RECORD_STRIP_MASK(load_flags) == _USER_RECORD_MASK_MAX) /* strip everything? */
                  return json_log(v, json_flags, SYNTHETIC_ERRNO(EINVAL), "Stripping everything from record, refusing.");
- 
+
 -        /* Extra safety: mark sensitive parts of the JSON as such, so that they are not included in debug
 -         * output and erased from memory when we are done. We do this for any record that passes through here. */
 -        FOREACH_STRING(key,
@@ -254,7 +254,7 @@ index 4dfb2c7..d5e572d 100644
 +         * that it is not included in debug output and erased from memory when we are done. We do this for
 +         * any record that passes through here. */
 +        sd_json_variant_sensitive(sd_json_variant_by_key(v, "secret"));
- 
+
          /* Check if we have the special sections and if they match our flags set */
          FOREACH_ELEMENT(i, mask_field) {
 @@ -1619,7 +1588,6 @@ int user_record_load(UserRecord *h, sd_json_variant *v, UserRecordLoadFlags load
@@ -272,18 +272,18 @@ index 4eb35d4..c3d52d2 100644
 @@ -1,8 +1,6 @@
  /* SPDX-License-Identifier: LGPL-2.1-or-later */
  #pragma once
- 
+
 -#include <time.h>
 -
  #include "sd-id128.h"
- 
+
  #include "bitfield.h"
 @@ -268,7 +266,6 @@ typedef struct UserRecord {
          char *password_hint;
          char *icon_name;
          char *location;
 -        struct tm birth_date;
- 
+
          char *blob_directory;
          Hashmap *blob_manifest;
 diff --git a/src/sysupdate/sysupdate-resource.c b/src/sysupdate/sysupdate-resource.c
@@ -293,7 +293,7 @@ index ba1842b..1cc4820 100644
 @@ -433,10 +433,24 @@ static int process_magic_file(
          if (iovec_memcmp(&IOVEC_MAKE(expected_hash, sizeof(expected_hash)), hash) != 0)
                  log_warning("Hash of best before marker file '%s' has unexpected value, proceeding anyway.", fn);
- 
+
 +        struct tm parsed_tm = {};
 +        const char *n = strptime(e, "%Y-%m-%d", &parsed_tm);
 +        if (!n || *n != 0) {
@@ -314,10 +314,10 @@ index ba1842b..1cc4820 100644
 +            copy_tm.tm_mon != parsed_tm.tm_mon ||
 +            copy_tm.tm_year != parsed_tm.tm_year) {
 +                /* date was not normalized? (e.g. "30th of feb") */
-+                log_warning("Found best before marker with a non-normalized data, ignoring: %s", fn);
++                log_warning("Found best before marker with a non-normalized date, ignoring: %s", fn);
                  return 0;
          }
- 
+
 diff --git a/src/test/test-time-util.c b/src/test/test-time-util.c
 index 04da989..9474da0 100644
 --- a/src/test/test-time-util.c
@@ -325,7 +325,7 @@ index 04da989..9474da0 100644
 @@ -1307,36 +1307,4 @@ TEST(parse_calendar_date) {
          ASSERT_ERROR(parse_calendar_date("06-15-2023", &usec), EINVAL); /* wrong order */
  }
- 
+
 -TEST(parse_birth_date) {
 -        struct tm tm;
 -
@@ -377,5 +377,5 @@ index 480a3f3..c807ffe 100644
 -             SD_JSON_BUILD_PAIR_STRING("birthDate", "1990-06-15"));
 -        ASSERT_FALSE(user_record_self_changes_allowed(curr, new));
  }
- 
+
  DEFINE_TEST_MAIN(LOG_INFO);

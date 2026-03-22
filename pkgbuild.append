@@ -11,7 +11,14 @@ eval "$(declare -f prepare | sed '1s/prepare/_orig_prepare/')"
 prepare() {
     _orig_prepare
     cd "${srcdir}/${pkgbase}"
-    if grep -q 'birth_date' src/shared/user-record.h 2>/dev/null; then
+
+    # Verify we landed in the actual systemd source tree
+    if [[ ! -f src/shared/user-record.h ]]; then
+        error "user-record.h not found — source directory layout may have changed (pkgbase=%s)" "$pkgbase"
+        return 1
+    fi
+
+    if grep -q 'birth_date' src/shared/user-record.h; then
         msg2 "Reverting age-verification infrastructure..."
         patch -Np1 -i "${srcdir}/0001-revert-age-verification.patch"
     else
