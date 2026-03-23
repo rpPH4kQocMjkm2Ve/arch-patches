@@ -112,9 +112,15 @@ Generated files go to `packages/<name>/aur/`.
 ## CI
 
 A daily GitHub Actions workflow
-([`.github/workflows/check.yml`](.github/workflows/check.yml)) verifies
-patches still apply to the latest upstream. If upstream removes the
-age-verification code, CI will report the patch as obsolete.
+([`.github/workflows/check.yml`](.github/workflows/check.yml)) runs three
+checks for systemd:
+
+- **systemd-extract** — downloads and unpacks the current Arch source
+- **systemd-code-present** — checks whether the age-verification code
+  (`birthDate` / `birth_date`) has appeared in the Arch package (not present
+  in 260, expected in 261+)
+- **systemd-patch-applies** — verifies patches apply cleanly (only runs
+  when the code is present)
 
 CI also monitors the `xdg-desktop-portal`
 [ParentalControls PR](https://github.com/flatpak/xdg-desktop-portal/pull/1922)
