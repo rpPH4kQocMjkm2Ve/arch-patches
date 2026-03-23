@@ -1,4 +1,4 @@
-name: Check patch applies
+name: Check patches
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-systemd:
+  systemd-extract:
     runs-on: ubuntu-latest
     container:
       image: archlinux/archlinux:base-devel
@@ -23,61 +23,168 @@ jobs:
             https://gitlab.archlinux.org/archlinux/packaging/packages/systemd.git \
             /tmp/upstream
 
+      - name: Get upstream version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^pkgver=' /tmp/upstream/PKGBUILD | cut -d= -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo ":: Arch upstream systemd version: $VERSION"
+
       - name: Extract source via makepkg
         run: |
           cd /tmp/upstream
           useradd -m builder 2>/dev/null || true
           chown -R builder: /tmp/upstream
-          # --nobuild exits non-zero by design (build not attempted)
           su builder -c 'makepkg --nobuild --nodeps --skippgpcheck 2>&1 | tail -30' \
             || true
 
       - name: Verify source extraction
         run: |
-          HEADER=$(find /tmp/upstream/src/ -path '*/shared/user-record.h' 2>/dev/null | head -1)
-          if [[ -z "$HEADER" ]]; then
-            echo "::error::user-record.h not found — source extraction may have failed"
-            find /tmp/upstream/ -maxdepth 3 -type d 2>/dev/null || true
-            exit 1
-          fi
-          echo ":: Found header: $HEADER"
-
-      - name: Check if age-verification code exists
-        id: age-check
-        run: |
-          HEADER=$(find /tmp/upstream/src/ -path '*/shared/user-record.h' | head -1)
-          if grep -q 'birth_date' "$HEADER"; then
-            echo ":: Age-verification code present — patch needed"
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo ":: Age-verification code not present — patch not needed yet"
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify patches apply cleanly
-        if: steps.age-check.outputs.needed == 'true'
-        run: |
           SRC_DIR=$(ls -d /tmp/upstream/src/systemd*/ 2>/dev/null | head -1)
           if [[ -z "$SRC_DIR" ]]; then
             echo "::error::systemd source directory not found"
-            ls -la /tmp/upstream/src/ || true
+            find /tmp/upstream/ -maxdepth 3 -type d 2>/dev/null || true
             exit 1
           fi
-          cd "$SRC_DIR"
-          for p in "$GITHUB_WORKSPACE"/packages/systemd/patches/*.patch; do
-            echo ":: Testing $(basename "$p")"
-            patch -Np1 --dry-run < "$p"
-          done
-          echo ":: All patches apply cleanly"
+          echo ":: Source directory: $SRC_DIR"
 
-  check-xdp:
+      - name: Upload extracted source
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-source
+          path: /tmp/upstream/src/
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  # ── Does the Arch package ship age-verification code? ──────────────────────
+  #
+  #  v260: code absent, patch not needed yet
+  #  v261+: code present, patch needed
+  #
+  #  Never fails the pipeline — informational only.
+
+  systemd-code-present:
+    needs: systemd-extract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download extracted source
+        uses: actions/download-artifact@v4
+        with:
+          name: systemd-source
+          path: /tmp/src/
+
+      - name: Check for age-verification code
+        id: code-check
+        run: |
+          VERSION="${{ needs.systemd-extract.outputs.version }}"
+          echo ":: Arch systemd version: $VERSION"
+
+          HEADER=$(find /tmp/src/ -path '*/shared/user-record.h' | head -1)
+          if [[ -z "$HEADER" ]]; then
+            echo ":: user-record.h not found — version $VERSION predates the code"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FOUND=0
+          for marker in birth_date birthDate; do
+            if grep -q "$marker" "$HEADER"; then
+              echo ":: Found '$marker' in user-record.h"
+              FOUND=$((FOUND + 1))
+            fi
+          done
+
+          if [[ "$FOUND" -gt 0 ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Age-verification code present in systemd $VERSION — patch needed"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo ":: Age-verification code not present in systemd $VERSION"
+          fi
+
+      - name: Summary
+        run: |
+          VERSION="${{ needs.systemd-extract.outputs.version }}"
+          PRESENT="${{ steps.code-check.outputs.present }}"
+          {
+            if [[ "$PRESENT" == "true" ]]; then
+              echo "### systemd $VERSION: age-verification code present"
+              echo "Patch is needed."
+            else
+              echo "### systemd $VERSION: age-verification code not present"
+              echo "Patch not needed yet. Will become relevant when Arch updates to 261+."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+    outputs:
+      present: ${{ steps.code-check.outputs.present }}
+
+  # ── Does the patch apply cleanly? ──────────────────────────────────────────
+  #
+  #  Skipped when code is not present (nothing to patch).
+  #  Failure = patch needs rebasing.
+
+  systemd-patch-applies:
+    needs: [systemd-extract, systemd-code-present]
+    if: needs.systemd-code-present.outputs.present == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check PR #1922 status
-        id: pr-status
+      - name: Download extracted source
+        uses: actions/download-artifact@v4
+        with:
+          name: systemd-source
+          path: /tmp/src/
+
+      - name: Find source directory
+        id: find-src
+        run: |
+          SRC_DIR=$(ls -d /tmp/src/systemd*/ 2>/dev/null | head -1)
+          if [[ -z "$SRC_DIR" ]]; then
+            echo "::error::systemd source directory not found"
+            ls -laR /tmp/src/ || true
+            exit 1
+          fi
+          echo "src_dir=$SRC_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Verify patches apply cleanly
+        run: |
+          cd "${{ steps.find-src.outputs.src_dir }}"
+          FAIL=0
+          for p in "$GITHUB_WORKSPACE"/packages/systemd/patches/*.patch; do
+            echo ":: Testing $(basename "$p")"
+            if patch -Np1 --dry-run < "$p"; then
+              echo "  applies cleanly"
+            else
+              echo "::error::$(basename "$p") does not apply"
+              FAIL=1
+            fi
+          done
+          if [[ "$FAIL" -ne 0 ]]; then
+            exit 1
+          fi
+          echo ":: All patches apply cleanly"
+
+      - name: Summary
+        run: |
+          {
+            echo "### systemd patches: all apply cleanly"
+            echo "Tested against Arch systemd ${{ needs.systemd-extract.outputs.version }}."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── xdg-desktop-portal ────────────────────────────────────────────────────
+
+  xdp-pr-status:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check PR 1922 status
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -86,17 +193,27 @@ jobs:
           MERGED=$(echo "$PR_JSON" | jq -r '.merged')
           TITLE=$(echo "$PR_JSON" | jq -r '.title')
 
-          echo ":: PR #1922: \"$TITLE\""
+          echo ":: PR #1922: $TITLE"
           echo "::   state=$STATE  merged=$MERGED"
 
-          echo "state=$STATE"   >> "$GITHUB_OUTPUT"
-          echo "merged=$MERGED" >> "$GITHUB_OUTPUT"
-
           if [[ "$MERGED" == "true" ]]; then
-            echo "::warning::PR #1922 has been MERGED"
+            echo "::warning::PR #1922 has been merged"
           fi
 
-      - name: Check if ParentalControls code is in main branch
+          {
+            echo "### xdg-desktop-portal PR 1922"
+            echo "- State: $STATE"
+            echo "- Merged: $MERGED"
+            echo "- Title: $TITLE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  xdp-code-landed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check if ParentalControls code is in main
         id: main-check
         run: |
           HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -104,20 +221,20 @@ jobs:
 
           if [[ "$HTTP_CODE" == "200" ]]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::parental-controls.c found in main — patch is now needed"
+            echo "::warning::parental-controls.c found in main — patch needed"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
             echo ":: parental-controls.c not in main yet (HTTP $HTTP_CODE)"
           fi
 
-      - name: Check Arch packaging for ParentalControls
+      - name: Check Arch packaging
         run: |
           git clone --depth 1 \
             https://gitlab.archlinux.org/archlinux/packaging/packages/xdg-desktop-portal.git \
             /tmp/xdp-pkg
 
           if grep -rq 'parental.controls\|ParentalControls' /tmp/xdp-pkg/; then
-            echo "::warning::Arch xdg-desktop-portal package already references ParentalControls"
+            echo "::warning::Arch xdg-desktop-portal references ParentalControls"
           else
             echo ":: Arch package does not reference ParentalControls yet"
           fi
@@ -126,7 +243,7 @@ jobs:
         if: steps.main-check.outputs.found == 'true'
         run: |
           if [ ! -s packages/xdg-desktop-portal/patches/0001-remove-parental-controls.patch ]; then
-            echo "::error::ParentalControls landed upstream but no patch exists in packages/xdg-desktop-portal/patches/"
+            echo "::error::ParentalControls landed upstream but no patch exists"
             exit 1
           fi
           echo ":: Patch file exists"
