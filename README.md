@@ -1,5 +1,8 @@
 # arch-patches
 
+[![CI](https://github.com/rpPH4kQocMjkm2Ve/arch-patches/actions/workflows/check.yml/badge.svg)](https://github.com/rpPH4kQocMjkm2Ve/arch-patches/actions/workflows/check.yml)
+![License](https://img.shields.io/github/license/rpPH4kQocMjkm2Ve/arch-patches)
+
 Arch Linux packages rebuilt with age-verification and surveillance
 infrastructure removed.
 
