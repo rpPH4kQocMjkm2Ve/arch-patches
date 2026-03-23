@@ -165,7 +165,6 @@ Build artifacts are kept out of the source tree:
 ```
 
 Override with `CACHEDIR=…` (e.g. `make CACHEDIR=/tmp/build`).
-```
 
 
 ## License
