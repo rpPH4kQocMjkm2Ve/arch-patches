@@ -1,6 +1,7 @@
 PKGBASE     := xdg-desktop-portal
 ARCH_PKG    := https://gitlab.archlinux.org/archlinux/packaging/packages/$(PKGBASE).git
-BUILDDIR    := .build
+CACHEDIR    ?= $(HOME)/.cache/arch-patches
+BUILDDIR    := $(CACHEDIR)/$(PKGBASE)
 CHROOT      ?= /var/lib/makechrootpkg
 
 .PHONY: build test-quick clean

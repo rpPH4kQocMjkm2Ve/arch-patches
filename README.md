@@ -147,6 +147,18 @@ packaging. If it has, CI will fail until a removal patch is added.
     └── check.yml                        # daily patch + upstream checks
 ```
 
+Build artifacts are kept out of the source tree:
+
+```
+~/.cache/arch-patches/
+├── systemd/              # cloned upstream + built packages
+└── xdg-desktop-portal/
+```
+
+Override with `CACHEDIR=…` (e.g. `make CACHEDIR=/tmp/build`).
+```
+
+
 ## License
 
 LGPL-2.1-or-later — same as systemd and xdg-desktop-portal.

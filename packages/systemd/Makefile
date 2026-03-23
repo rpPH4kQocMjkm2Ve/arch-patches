@@ -1,6 +1,7 @@
 PKGBASE     := systemd
 ARCH_PKG    := https://gitlab.archlinux.org/archlinux/packaging/packages/$(PKGBASE).git
-BUILDDIR    := .build
+CACHEDIR    ?= $(HOME)/.cache/arch-patches
+BUILDDIR    := $(CACHEDIR)/$(PKGBASE)
 CHROOT      ?= /var/lib/makechrootpkg
 
 .PHONY: check-upstream build test-quick test-smoke clean

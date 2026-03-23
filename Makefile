@@ -3,6 +3,7 @@ PACKAGES    := systemd
 CHROOT      := /var/lib/makechrootpkg
 REPODIR     ?= /var/cache/pacman/custom
 REPONAME    ?= custom
+CACHEDIR ?= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/arch-patches
 
 .PHONY: all build test-quick test-smoke deploy \
         setup-chroot nuke-chroot sync-aur clean $(PACKAGES)
@@ -10,24 +11,24 @@ REPONAME    ?= custom
 all: $(PACKAGES)
 
 $(PACKAGES):
-	$(MAKE) -C packages/$@ build CHROOT=$(CHROOT)
-	$(MAKE) -C packages/$@ test-quick
+	$(MAKE) -C packages/$@ build CHROOT=$(CHROOT) CACHEDIR=$(CACHEDIR)
+	$(MAKE) -C packages/$@ test-quick CACHEDIR=$(CACHEDIR)
 
 build: $(PACKAGES)
 
 test-quick:
 	@for pkg in $(PACKAGES); do \
-		$(MAKE) -C packages/$$pkg test-quick; \
+		$(MAKE) -C packages/$$pkg test-quick CACHEDIR=$(CACHEDIR); \
 	done
 
 test-smoke:
 	@for pkg in $(PACKAGES); do \
-		sudo $(MAKE) -C packages/$$pkg test-smoke; \
+		sudo $(MAKE) -C packages/$$pkg test-smoke CACHEDIR=$(CACHEDIR); \
 	done
 
 deploy:
 	@for pkg in $(PACKAGES); do \
-		bash deploy/push.sh packages/$$pkg/.build $(REPODIR) $(REPONAME); \
+		bash deploy/push.sh $(CACHEDIR)/$$pkg $(REPODIR) $(REPONAME); \
 	done
 
 sync-aur:
@@ -50,5 +51,5 @@ nuke-chroot:
 
 clean:
 	@for pkg in $(PACKAGES); do \
-		$(MAKE) -C packages/$$pkg clean; \
+		$(MAKE) -C packages/$$pkg clean CACHEDIR=$(CACHEDIR); \
 	done
