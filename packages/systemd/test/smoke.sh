@@ -16,6 +16,8 @@ if (( ${#PKGS[@]} == 0 )); then
 fi
 
 ROOT=$(mktemp -d /tmp/sd-smoke.XXXXXX)
+[[ -z "$ROOT" || "$ROOT" == "/" ]] && { echo "ERROR: bad ROOT=$ROOT" >&2; exit 1; }
+[[ "$ROOT" != /tmp/sd-smoke.* ]] && { echo "ERROR: ROOT outside tmpdir: $ROOT" >&2; exit 1; }
 chmod 755 "$ROOT"
 chown root:root "$ROOT"
 trap 'rm -rf "$ROOT"' EXIT
