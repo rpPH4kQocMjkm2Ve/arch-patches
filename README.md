@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/rpPH4kQocMjkm2Ve/arch-patches/actions/workflows/check.yml/badge.svg)](https://github.com/rpPH4kQocMjkm2Ve/arch-patches/actions/workflows/check.yml)
 ![License](https://img.shields.io/github/license/rpPH4kQocMjkm2Ve/arch-patches)
+[![Spec](https://img.shields.io/endpoint?url=https://gitlab.com/fkzys/specs/-/raw/main/version.json&maxAge=300)](https://gitlab.com/fkzys/specs)
 
 Arch Linux packages rebuilt with age-verification and surveillance
 infrastructure removed.
